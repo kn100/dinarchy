@@ -4,6 +4,7 @@ import (
 	"strconv"
 )
 
+// TODO: Whyyyyyy
 type Recipient struct {
 	TGID int
 }

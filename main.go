@@ -27,7 +27,7 @@ func main() {
 		sugar.Fatal("error loading .env file")
 	}
 
-	db, err := gorm.Open("sqlite3", "dinarchy.sqlite3")
+	db, err := gorm.Open("sqlite3", "dinarchy.sqlite3") //Add to env file
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -120,6 +120,7 @@ func handleShow(tgs *tb.Bot, js services.JobService, tgid int, _ string) {
 }
 
 func handleDelete(tgs *tb.Bot, js services.JobService, tgid int, text string) {
+	//Todo: pass around the recipient object, rather than this fucking tgid
 	tgid_str := strconv.Itoa(tgid)
 	cmd := strings.TrimPrefix(text, "/delete ")
 
