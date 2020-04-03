@@ -1,14 +1,16 @@
 package main
 
 import (
+	"dinarchy/models"
+	"dinarchy/services"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	"dinarchy/dcron"
-	"dinarchy/dinarchyusers"
-
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 	tb "gopkg.in/tucnak/telebot.v2"
@@ -25,6 +27,15 @@ func main() {
 		sugar.Fatal("error loading .env file")
 	}
 
+	db, err := gorm.Open("sqlite3", "dinarchy.sqlite3")
+	if err != nil {
+		panic("failed to connect database")
+	}
+	defer db.Close()
+
+	// Migrate the schema
+	db.AutoMigrate(&models.Job{})
+
 	// You can get an API key from the botfather...
 	b, err := tb.NewBot(tb.Settings{
 		Token:  os.Getenv("TGBOT_KEY"),
@@ -33,32 +44,43 @@ func main() {
 	if err != nil {
 		sugar.Fatal(err)
 	}
-	sugar.Debug("Started Telegram Bot")
 
-	dinarchyusers := dinarchyusers.DinarchyUsers{Logger: sugar}
-	sugar.Debug("Created user store")
+	sugar.Debug("Created Telegram Service")
+
+	cs := services.CronService{TS: b}
+	cs.Init()
+
+	js := services.JobService{DB: db, CS: cs}
+	js.LoadJobs()
+
+	sugar.Debug("Created Job Service")
 
 	b.Handle("/start", func(m *tb.Message) {
-		handleHelp(b, dinarchyusers.GetDcron(m.Sender), m.Text)
+		handleHelp(b, m.Sender.ID, m.Text)
 	})
 
 	b.Handle("/help", func(m *tb.Message) {
-		handleHelp(b, dinarchyusers.GetDcron(m.Sender), m.Payload)
+		handleHelp(b, m.Sender.ID, m.Text)
 		sugar.Debugw("/help", "args", m.Payload, "sender", m.Sender)
 	})
 
 	b.Handle("/create", func(m *tb.Message) {
-		handleCreate(b, dinarchyusers.GetDcron(m.Sender), m.Payload)
+		handleCreate(b, js, m.Sender.ID, m.Payload)
 		sugar.Debugw("/create", "args", m.Payload, "sender", m.Sender)
 	})
 
+	b.Handle("/show", func(m *tb.Message) {
+		handleShow(b, js, m.Sender.ID, m.Payload)
+		sugar.Debugw("/show", "args", m.Payload, "sender", m.Sender)
+	})
+
 	b.Handle("/delete", func(m *tb.Message) {
-		handleDelete(b, dinarchyusers.GetDcron(m.Sender), m.Payload)
+		handleDelete(b, js, m.Sender.ID, m.Payload)
 		sugar.Debugw("/delete", "args", m.Payload, "sender", m.Sender)
 	})
 
 	b.Handle(tb.OnText, func(m *tb.Message) {
-		handleOther(b, dinarchyusers.GetDcron(m.Sender), m.Payload)
+		handleOther(b, m.Sender.ID, m.Payload)
 		sugar.Debugw("unknown", "args", m.Payload, "sender", m.Sender)
 	})
 
@@ -66,40 +88,59 @@ func main() {
 	b.Start()
 }
 
-func handleCreate(b *tb.Bot, dc dcron.Dcron, c string) {
-
-	cmd := strings.TrimPrefix(c, "/create ")
+func handleCreate(tgs *tb.Bot, js services.JobService, tgid int, text string) {
+	tgid_str := strconv.Itoa(tgid)
+	cmd := strings.TrimPrefix(text, "/create ")
 
 	argsplit := split(cmd)
 	if len(argsplit) < 3 {
-		handleOther(b, dc, c)
+		handleOther(tgs, tgid, text)
 		return
 	}
-	_, err := dc.AddJob(argsplit[0], argsplit[1], argsplit[2], b.Send)
+	err := js.AddJob(tgid_str, argsplit[0], argsplit[1], argsplit[2])
 	if err != nil {
-		b.Send(dc.Tguser, "Could not create cron: "+err.Error())
+		tgs.Send(&services.Recipient{TGID: tgid}, "Could not create cron: "+err.Error(), &tb.SendOptions{ParseMode: tb.ModeMarkdown})
 		return
 	}
-	b.Send(dc.Tguser, fmt.Sprintf("Created job with name %s", argsplit[1]))
+	tgs.Send(&services.Recipient{TGID: tgid}, fmt.Sprintf("Created job with name %s", argsplit[1]), &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+
 }
 
-func handleDelete(b *tb.Bot, dc dcron.Dcron, c string) {
-	cmd := strings.TrimPrefix(c, "/delete ")
+func handleShow(tgs *tb.Bot, js services.JobService, tgid int, _ string) {
+	tgid_str := strconv.Itoa(tgid)
 
-	if err := dc.RemoveJob(cmd); err != nil {
-		b.Send(dc.Tguser, "Could not remove cron: "+err.Error())
+	jobs := js.GetJobs(tgid_str)
+	jobstr := fmt.Sprintf("Your %d jobs: \n", len(jobs))
+	for _, j := range jobs {
+		jobstr += fmt.Sprintf("cron: `%s`, name: `%s`\n", j.Name, j.CronString)
+	}
+	fmt.Println("jobstr:", string(jobstr))
+	tgs.Send(&services.Recipient{TGID: tgid}, jobstr, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+
+}
+
+func handleDelete(tgs *tb.Bot, js services.JobService, tgid int, text string) {
+	tgid_str := strconv.Itoa(tgid)
+	cmd := strings.TrimPrefix(text, "/delete ")
+
+	if err := js.RemoveJob(tgid_str, cmd); err != nil {
+		tgs.Send(&services.Recipient{TGID: tgid}, "Could not remove cron: "+err.Error(), &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+
 		return
 	}
-	b.Send(dc.Tguser, fmt.Sprintf("Removed cron %s", cmd))
+	tgs.Send(&services.Recipient{TGID: tgid}, fmt.Sprintf("Removed cron %s", cmd))
 }
 
-func handleHelp(b *tb.Bot, dc dcron.Dcron, _ string) {
+func handleHelp(tgs *tb.Bot, tgid int, _ string) {
 	s := "Dinarchy is a bot for scheduling reminders using Cron syntax.\n\n` /create 0 9 * * *,milk-check,Check the milk` would schedule a reminder to check the milk at 09:00 every morning, called milk-check for example\n\n`/delete milk-check` will delete the cron job with the name milk-check."
-	b.Send(dc.Tguser, s, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+	s2 := "/show shows your commands"
+	tgs.Send(&services.Recipient{TGID: tgid}, s, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+	tgs.Send(&services.Recipient{TGID: tgid}, s2, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+
 }
 
-func handleOther(b *tb.Bot, dc dcron.Dcron, _ string) {
-	b.Send(dc.Tguser, "Unknown command. try /help")
+func handleOther(tgs *tb.Bot, tgid int, _ string) {
+	tgs.Send(&services.Recipient{TGID: tgid}, "Unknown command. try /help", &tb.SendOptions{ParseMode: tb.ModeMarkdown})
 }
 
 func split(cmd string) []string {
