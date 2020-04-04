@@ -112,7 +112,7 @@ func handleShow(tgs *tb.Bot, js services.JobService, tgid int, _ string) {
 	jobs := js.GetJobs(tgid_str)
 	jobstr := fmt.Sprintf("Your %d jobs: \n", len(jobs))
 	for _, j := range jobs {
-		jobstr += fmt.Sprintf("cron: `%s`, name: `%s`\n", j.Name, j.CronString)
+		jobstr += fmt.Sprintf("cron: `%s`, name: `%s`\n", j.CronString, j.Name)
 	}
 	fmt.Println("jobstr:", string(jobstr))
 	tgs.Send(&services.Recipient{TGID: tgid}, jobstr, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
