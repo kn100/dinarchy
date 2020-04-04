@@ -28,7 +28,7 @@ func main() {
 		sugar.Fatal("error loading .env file")
 	}
 
-	db, err := gorm.Open("sqlite3", os.Getenv("DB_PATh")) //Add to env file
+	db, err := gorm.Open("sqlite3", os.Getenv("DB_PATH")) //Add to env file
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -134,7 +134,7 @@ func handleDelete(tgs *tb.Bot, js services.JobService, tgid int, text string) {
 }
 
 func handleHelp(tgs *tb.Bot, tgid int, _ string) {
-	s := "Dinarchy is a bot for scheduling reminders using Cron syntax.`/create milk-check, Check the milk, 0 9 * * *` would schedule a reminder to check the milk at 09:00 every morning. \n\n`/delete milk-check` will delete the cron job with the name milk-check."
+	s := "Dinarchy is a bot for scheduling reminders using Cron syntax.\n\n`/create milk-check, Check the milk, 0 9 * * *` would schedule a reminder to check the milk at 09:00 every morning. \n\n`/delete milk-check` will delete the cron job with the name milk-check."
 	s2 := "/show shows your commands"
 	tgs.Send(&services.Recipient{TGID: tgid}, s, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
 	tgs.Send(&services.Recipient{TGID: tgid}, s2, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
