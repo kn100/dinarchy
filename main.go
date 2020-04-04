@@ -27,7 +27,7 @@ func main() {
 		sugar.Fatal("error loading .env file")
 	}
 
-	db, err := gorm.Open("sqlite3", "dinarchy.sqlite3") //Add to env file
+	db, err := gorm.Open("sqlite3", "/database/dinarchy.sqlite3") //Add to env file
 	if err != nil {
 		panic("failed to connect database")
 	}
