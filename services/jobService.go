@@ -2,6 +2,7 @@ package services
 
 import (
 	"dinarchy/models"
+	"dinarchy/utils"
 	"errors"
 
 	"github.com/jinzhu/gorm"
@@ -12,17 +13,17 @@ type JobService struct {
 	CS CronService
 }
 
-func (js *JobService) AddJob(tgid, cronstring, name, message string) error {
+func (js *JobService) AddJob(tgid string, cr utils.CreateRequest) error {
 	// TODO: Verify that the job doesn't exist since gorm doesn't do primary keys with sqlite3. Either that or switch to a real db.
-	job := models.Job{TGID: tgid, Name: name, CronString: cronstring, Message: message}
+	job := models.Job{TGID: tgid, Name: cr.Name, CronString: cr.Cronstring, Message: cr.Message}
 	errs := js.DB.Create(&job).GetErrors()
 	if len(errs) != 0 { // TODO: Handle better
 		return errs[0]
 	}
 	_, err := js.CS.AddAJob(job)
 	if err != nil {
-		js.RemoveJob(tgid, name)
-		return errors.New("Couldn't create the cron job for some reason. Your job was not persisted.")
+		js.RemoveJob(tgid, cr.Name)
+		return errors.New("couldn't create the cron job for some reason. Your cron string was probably not shaped correctly")
 	}
 	return nil
 }

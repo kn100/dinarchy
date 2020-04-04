@@ -3,6 +3,7 @@ package main
 import (
 	"dinarchy/models"
 	"dinarchy/services"
+	"dinarchy/utils"
 	"fmt"
 	"os"
 	"strconv"
@@ -27,7 +28,7 @@ func main() {
 		sugar.Fatal("error loading .env file")
 	}
 
-	db, err := gorm.Open("sqlite3", "/database/dinarchy.sqlite3") //Add to env file
+	db, err := gorm.Open("sqlite3", os.Getenv("DB_PATh")) //Add to env file
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -61,27 +62,27 @@ func main() {
 
 	b.Handle("/help", func(m *tb.Message) {
 		handleHelp(b, m.Sender.ID, m.Text)
-		sugar.Debugw("/help", "args", m.Payload, "sender", m.Sender)
+		sugar.Debugw("/help", "args", m.Text, "sender", m.Sender)
 	})
 
 	b.Handle("/create", func(m *tb.Message) {
 		handleCreate(b, js, m.Sender.ID, m.Payload)
-		sugar.Debugw("/create", "args", m.Payload, "sender", m.Sender)
+		sugar.Debugw("/create", "args", m.Text, "sender", m.Sender)
 	})
 
 	b.Handle("/show", func(m *tb.Message) {
 		handleShow(b, js, m.Sender.ID, m.Payload)
-		sugar.Debugw("/show", "args", m.Payload, "sender", m.Sender)
+		sugar.Debugw("/show", "args", m.Text, "sender", m.Sender)
 	})
 
 	b.Handle("/delete", func(m *tb.Message) {
 		handleDelete(b, js, m.Sender.ID, m.Payload)
-		sugar.Debugw("/delete", "args", m.Payload, "sender", m.Sender)
+		sugar.Debugw("/delete", "args", m.Text, "sender", m.Sender)
 	})
 
 	b.Handle(tb.OnText, func(m *tb.Message) {
 		handleOther(b, m.Sender.ID, m.Payload)
-		sugar.Debugw("unknown", "args", m.Payload, "sender", m.Sender)
+		sugar.Debugw("unknown", "args", m.Text, "sender", m.Sender)
 	})
 
 	sugar.Infof("Bot awaiting commands")
@@ -92,17 +93,17 @@ func handleCreate(tgs *tb.Bot, js services.JobService, tgid int, text string) {
 	tgid_str := strconv.Itoa(tgid)
 	cmd := strings.TrimPrefix(text, "/create ")
 
-	argsplit := split(cmd)
-	if len(argsplit) < 3 {
+	cr, err := utils.ParseCreate(cmd)
+	if err != nil {
 		handleOther(tgs, tgid, text)
 		return
 	}
-	err := js.AddJob(tgid_str, argsplit[0], argsplit[1], argsplit[2])
+	err = js.AddJob(tgid_str, cr)
 	if err != nil {
 		tgs.Send(&services.Recipient{TGID: tgid}, "Could not create cron: "+err.Error(), &tb.SendOptions{ParseMode: tb.ModeMarkdown})
 		return
 	}
-	tgs.Send(&services.Recipient{TGID: tgid}, fmt.Sprintf("Created job with name %s", argsplit[1]), &tb.SendOptions{ParseMode: tb.ModeMarkdown})
+	tgs.Send(&services.Recipient{TGID: tgid}, fmt.Sprintf("Created job with name %s", cr.Name), &tb.SendOptions{ParseMode: tb.ModeMarkdown})
 
 }
 
@@ -133,7 +134,7 @@ func handleDelete(tgs *tb.Bot, js services.JobService, tgid int, text string) {
 }
 
 func handleHelp(tgs *tb.Bot, tgid int, _ string) {
-	s := "Dinarchy is a bot for scheduling reminders using Cron syntax.\n\n` /create 0 9 * * *,milk-check,Check the milk` would schedule a reminder to check the milk at 09:00 every morning, called milk-check for example\n\n`/delete milk-check` will delete the cron job with the name milk-check."
+	s := "Dinarchy is a bot for scheduling reminders using Cron syntax.`/create milk-check, Check the milk, 0 9 * * *` would schedule a reminder to check the milk at 09:00 every morning. \n\n`/delete milk-check` will delete the cron job with the name milk-check."
 	s2 := "/show shows your commands"
 	tgs.Send(&services.Recipient{TGID: tgid}, s, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
 	tgs.Send(&services.Recipient{TGID: tgid}, s2, &tb.SendOptions{ParseMode: tb.ModeMarkdown})
@@ -142,11 +143,4 @@ func handleHelp(tgs *tb.Bot, tgid int, _ string) {
 
 func handleOther(tgs *tb.Bot, tgid int, _ string) {
 	tgs.Send(&services.Recipient{TGID: tgid}, "Unknown command. try /help", &tb.SendOptions{ParseMode: tb.ModeMarkdown})
-}
-
-func split(cmd string) []string {
-	splitFunc := func(c rune) bool {
-		return c == ','
-	}
-	return strings.FieldsFunc(cmd, splitFunc)
 }
